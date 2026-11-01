@@ -22,16 +22,19 @@ class ModelOption(BaseModel):
 
 class ListingRow(BaseModel):
     ria_auto_id: int
+    model_id: int
     brand: str
     model: str
     title: str | None
     year: int | None
+    gearbox: str | None
     link: str | None
     city: str | None
     region: str | None
     status: str  # pending | active | sold | removed (provisional rules, see migration 0004)
     currency: str | None
     price: int | None  # in the seller's currency
+    price_usd: int | None  # as converted at the last fetch; for sorting across currencies
     first_price: int | None
     price_changes: int
     mileage_k_km: int | None
@@ -71,7 +74,6 @@ class ListingDetail(ListingRow):
     equipment: str | None
     body_type: str | None
     fuel_label: str | None
-    gearbox: str | None
     drive: str | None
     color: str | None
     description: str | None

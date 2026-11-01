@@ -16,6 +16,15 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
 
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:80"
+
   db-ui:
     image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
     restart: unless-stopped

@@ -78,10 +78,11 @@ def listings(model_id: int | None = None, status: list[str] = Query(default=list
              session: Session = Depends(get_session)) -> list[ListingRow]:
     if unknown := set(status) - set(STATUSES):
         raise HTTPException(422, f"unknown status: {', '.join(sorted(unknown))}")
-    query = "SELECT * FROM listing_latest WHERE status IN :statuses"
+    query = ("SELECT ll.*, l.gearbox FROM listing_latest ll JOIN listings l ON l.id = ll.listing_id "
+             "WHERE ll.status IN :statuses")
     params: dict = {"statuses": status}
     if model_id is not None:
-        query += " AND model_id = :model_id"
+        query += " AND ll.model_id = :model_id"
         params["model_id"] = model_id
     rows = session.execute(text(query).bindparams(bindparam("statuses", expanding=True)), params).mappings()
     return [ListingRow(**row) for row in rows]
