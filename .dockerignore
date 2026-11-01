@@ -5,3 +5,4 @@ data/
 plan.md
 scripts/
 **/__pycache__/
+logs/

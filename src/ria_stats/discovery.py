@@ -7,7 +7,9 @@ cycle. A model is swept again once that run is REFRESH_DAYS calendar days old.
 
 Usage: uv run python -m ria_stats.discovery
 """
+import argparse
 import logging
+import sys
 from datetime import datetime
 
 import httpx
@@ -17,6 +19,8 @@ from sqlalchemy.orm import Session
 from ria_stats.client import RateLimited, RiaClient
 from ria_stats.config import REFRESH_DAYS, TRACKED, utcnow
 from ria_stats.db import SessionLocal
+from ria_stats.locking import UpdateInProgress, update_lock
+from ria_stats.logging_setup import setup_logging
 from ria_stats.models import DiscoveryRun, Listing, Model
 
 log = logging.getLogger("ria_stats.discovery")
@@ -63,16 +67,21 @@ def _store(session: Session, model: Model, ids: list[int], started_at: datetime)
     return new
 
 
-def discover(session: Session, client: RiaClient) -> list[DiscoveryRun]:
-    """Sweep every tracked model that is due; return the runs made (none when nothing is due)."""
+def discover(session: Session, client: RiaClient, trigger: str = "manual",
+             force: bool = False) -> list[DiscoveryRun]:
+    """Sweep every tracked model that is due (all of them with force); return the runs made.
+
+    A completed sweep starts a new refresh cycle, so every listing becomes pending again.
+    The caller holds the update lock.
+    """
     runs = []
     for brand_ria_id, model_ria_id in TRACKED:
         model = session.scalars(select(Model).where(Model.ria_id == model_ria_id)).one()
         now = utcnow()
-        if not _is_due(session, model, now):
+        if not force and not _is_due(session, model, now):
             continue
 
-        run = DiscoveryRun(model=model, started_at=now, status="running")
+        run = DiscoveryRun(model=model, started_at=now, status="running", trigger=trigger)
         session.add(run)
         session.commit()
         requests_before = client.requests_used
@@ -108,13 +117,20 @@ def discover(session: Session, client: RiaClient) -> list[DiscoveryRun]:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    client = RiaClient()
+    setup_logging()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force", action="store_true", help="sweep even if one completed recently")
+    force = parser.parse_args().force
     try:
-        with SessionLocal() as session:
-            runs = discover(session, client)
-    finally:
-        client.close()
+        with update_lock():
+            client = RiaClient()
+            try:
+                with SessionLocal() as session:
+                    runs = discover(session, client, force=force)
+            finally:
+                client.close()
+    except UpdateInProgress as e:
+        sys.exit(str(e))
     for run in runs:
         print(f"discovery {run.id} (model {run.model_id}): {run.status}, {run.ids_returned} ids, "
               f"{run.requests_used} requests")

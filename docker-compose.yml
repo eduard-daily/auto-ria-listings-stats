@@ -1,14 +1,20 @@
 services:
-  collector:
+  app:
     build: .
     restart: unless-stopped
     env_file: .env
     environment:
       TZ: Europe/Kyiv
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
     # Same uid as the host user, so data/ria.db stays writable for manual runs outside Docker.
     user: "1000:1000"
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
 
   db-ui:
     image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim

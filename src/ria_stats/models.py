@@ -96,8 +96,9 @@ class DiscoveryRun(Base):
     ids_returned: Mapped[int | None]
     errors: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str]
+    trigger: Mapped[str] = mapped_column(server_default="manual")  # "manual" or "scheduled"
 
-    model: Mapped[Model] = relationship()
+    model: Mapped[Model] = relationship(lazy="joined")  # callers read it after the session closes
 
 
 class CollectionRun(Base):
@@ -111,6 +112,7 @@ class CollectionRun(Base):
     requests_used: Mapped[int] = mapped_column(default=0)
     errors: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str]
+    trigger: Mapped[str] = mapped_column(server_default="manual")  # "manual" or "scheduled"
 
 
 class ListingSnapshot(Base):

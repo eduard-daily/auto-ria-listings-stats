@@ -12,6 +12,7 @@ Usage: uv run python -m ria_stats.collector [--max-requests N]
 """
 import argparse
 import logging
+import sys
 from datetime import datetime
 
 import httpx
@@ -21,6 +22,8 @@ from sqlalchemy.orm import Session
 from ria_stats.client import RateLimited, RiaClient
 from ria_stats.config import MAX_REQUESTS, utcnow
 from ria_stats.db import SessionLocal
+from ria_stats.locking import UpdateInProgress, update_lock
+from ria_stats.logging_setup import setup_logging
 from ria_stats.models import CollectionRun, DiscoveryRun, Listing, ListingSnapshot, Location
 
 SITE_URL = "https://auto.ria.com"
@@ -127,8 +130,8 @@ def _anchors(session: Session) -> dict[int, datetime]:
     return dict(rows.all())
 
 
-def _pending(session: Session) -> list[tuple[Listing, datetime]]:
-    """Listings that still need a fetch, each with the anchor of its model's cycle."""
+def _pending(session: Session) -> list[tuple[Listing, bool]]:
+    """Listings that still need a fetch, each with whether it is still in search."""
     pending = []
     for model_id, anchor in _anchors(session).items():
         fresh = exists().where(ListingSnapshot.listing_id == Listing.id, ListingSnapshot.observed_at >= anchor)
@@ -144,20 +147,32 @@ def _pending(session: Session) -> list[tuple[Listing, datetime]]:
         listings = session.scalars(
             select(Listing).where(Listing.model_id == model_id, ~fresh, in_search_now | departed).order_by(Listing.id)
         )
-        pending += [(listing, anchor) for listing in listings]
+        pending += [(listing, listing.last_in_search_at >= anchor) for listing in listings]
     return pending
 
 
-def _fetch_pending(session: Session, client: RiaClient, run: CollectionRun, max_requests: int,
-                   errors: list[str]) -> None:
-    pending = _pending(session)
-    log.info("%s listings to fetch, request budget %s", len(pending), max_requests - client.requests_used)
-    for n, (listing, anchor) in enumerate(pending, 1):
+def pending_count(session: Session) -> int:
+    return len(_pending(session))
+
+
+def _single(session: Session, auto_id: int) -> list[tuple[Listing, bool]]:
+    """One listing picked by hand, whether or not it is pending."""
+    listing = session.scalar(select(Listing).where(Listing.ria_auto_id == auto_id))
+    if listing is None:
+        raise LookupError(f"unknown listing {auto_id}")
+    anchor = _anchors(session).get(listing.model_id)
+    return [(listing, anchor is not None and listing.last_in_search_at is not None
+             and listing.last_in_search_at >= anchor)]
+
+
+def _fetch_targets(session: Session, client: RiaClient, run: CollectionRun,
+                   targets: list[tuple[Listing, bool]], max_requests: int, errors: list[str]) -> None:
+    log.info("%s listings to fetch, request budget %s", len(targets), max_requests - client.requests_used)
+    for n, (listing, in_search) in enumerate(targets, 1):
         if client.requests_used >= max_requests:
-            log.info("request cap reached, %s listings left for the next run", len(pending) - n + 1)
+            log.info("request cap reached, %s listings left for the next run", len(targets) - n + 1)
             break
         now = utcnow()
-        in_search = listing.last_in_search_at >= anchor
         response = _fetch_info(client, listing.ria_auto_id, errors)
         if response is not None and response.status_code == 200:
             _apply_info(session, listing, response.json(), now)
@@ -166,28 +181,32 @@ def _fetch_pending(session: Session, client: RiaClient, run: CollectionRun, max_
         session.commit()
         outcome = (f"${snapshot.price_usd}, {snapshot.mileage_k_km}k km" if snapshot.fetch_ok
                    else f"fetch failed, HTTP {snapshot.http_status}")
-        log.info("[%s/%s] listing %s (%s %s): %s%s", n, len(pending), listing.ria_auto_id, listing.title,
+        log.info("[%s/%s] listing %s (%s %s): %s%s", n, len(targets), listing.ria_auto_id, listing.title,
                  listing.year, outcome, "" if in_search else ", left search")
 
 
-def collect(max_requests: int = MAX_REQUESTS, client: RiaClient | None = None) -> CollectionRun | None:
+def collect(max_requests: int = MAX_REQUESTS, client: RiaClient | None = None, trigger: str = "manual",
+            auto_id: int | None = None) -> CollectionRun | None:
     """Run one slice of detail collection; None when there is nothing to do.
 
-    Pass a client to share its request counter (and so the cap) with earlier work.
+    Pass a client to share its request counter (and so the cap) with earlier work. With auto_id,
+    fetch just that listing (LookupError if unknown) instead of the pending ones.
+    The caller holds the update lock.
     """
     with SessionLocal() as session:
-        if not _pending(session):
+        targets = _pending(session) if auto_id is None else _single(session, auto_id)
+        if not targets:
             return None
 
         own_client = client is None
         client = client or RiaClient()
         requests_before = client.requests_used
         errors: list[str] = []
-        run = CollectionRun(started_at=utcnow(), status="running")
+        run = CollectionRun(started_at=utcnow(), status="running", trigger=trigger)
         session.add(run)
         session.commit()
         try:
-            _fetch_pending(session, client, run, max_requests, errors)
+            _fetch_targets(session, client, run, targets, max_requests, errors)
             run.status = "completed_with_errors" if errors else "completed"
         except RateLimited as e:
             errors.append(f"HTTP 429 on {e}")
@@ -209,11 +228,17 @@ def collect(max_requests: int = MAX_REQUESTS, client: RiaClient | None = None) -
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    setup_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-requests", type=int, default=MAX_REQUESTS,
                         help="stop after this many API requests (default: %(default)s)")
-    finished = collect(parser.parse_args().max_requests)
+    parser.add_argument("--auto-id", type=int, help="fetch only this listing (RIA auto id)")
+    args = parser.parse_args()
+    try:
+        with update_lock():
+            finished = collect(args.max_requests, auto_id=args.auto_id)
+    except UpdateInProgress as e:
+        sys.exit(str(e))
     if finished is None:
         print("nothing to do (run ria_stats.discovery first if no discovery has completed yet)")
     else:
