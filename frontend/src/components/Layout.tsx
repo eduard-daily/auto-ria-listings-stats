@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { NoticeBanner } from "./NoticeBanner";
+import { ThemeToggle } from "./ThemeToggle";
 import { UpdateButton } from "./UpdateButton";
 
 function Logo() {
@@ -26,7 +27,10 @@ export function Layout() {
             </NavLink>
             <NavLink to="/stats">Stats</NavLink>
           </nav>
-          <UpdateButton />
+          <div className="topbar-actions">
+            <UpdateButton />
+            <ThemeToggle />
+          </div>
         </div>
       </header>
       <main className="container page">
