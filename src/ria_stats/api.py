@@ -23,11 +23,10 @@ from ria_stats.schemas import (CollectionRunOut, DiscoveryRunOut, ListingDetail,
                                PhotoOut, PhotosOut, Snapshot, Stats, UpdateOut)
 from ria_stats.update import UpdateResult, refresh_listing, run_update
 
-setup_logging()
-
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    setup_logging()
     scheduler = start_scheduler()
     yield
     scheduler.shutdown(wait=False)
