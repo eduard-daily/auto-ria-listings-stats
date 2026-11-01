@@ -82,15 +82,33 @@ class Listing(Base):
     location: Mapped[Location | None] = relationship()
 
 
+class DiscoveryRun(Base):
+    """One search sweep for one model: lists every active listing, no detail calls."""
+
+    __tablename__ = "discovery_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    model_id: Mapped[int] = mapped_column(ForeignKey("models.id"))
+    started_at: Mapped[datetime]
+    finished_at: Mapped[datetime | None]
+    requests_used: Mapped[int] = mapped_column(default=0)
+    search_total: Mapped[int | None]
+    ids_returned: Mapped[int | None]
+    errors: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str]
+
+    model: Mapped[Model] = relationship()
+
+
 class CollectionRun(Base):
+    """One slice of detail collection: /auto/info calls only."""
+
     __tablename__ = "collection_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     started_at: Mapped[datetime]
     finished_at: Mapped[datetime | None]
     requests_used: Mapped[int] = mapped_column(default=0)
-    search_total: Mapped[int | None]
-    ids_returned: Mapped[int | None]
     errors: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str]
 

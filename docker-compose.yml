@@ -1,0 +1,26 @@
+services:
+  collector:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Europe/Kyiv
+    # Same uid as the host user, so data/ria.db stays writable for manual runs outside Docker.
+    user: "1000:1000"
+    volumes:
+      - ./data:/app/data
+
+  db-ui:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      UV_CACHE_DIR: /tmp/uv-cache
+      UV_TOOL_DIR: /tmp/uv-tools
+      UV_TOOL_BIN_DIR: /tmp/uv-bin
+    command: uvx --from sqlite-web sqlite_web -r --host 0.0.0.0 --port 8080 /data/ria.db
+    # Localhost only: the DB holds VINs and plates.
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data:/data:ro
