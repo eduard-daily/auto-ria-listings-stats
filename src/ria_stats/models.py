@@ -77,6 +77,7 @@ class Listing(Base):
     first_seen_at: Mapped[datetime]
     last_seen_at: Mapped[datetime]
     last_in_search_at: Mapped[datetime | None]
+    photos_synced_at: Mapped[datetime | None]  # when its photos were recorded; once per listing
 
     model: Mapped[Model] = relationship()
     location: Mapped[Location | None] = relationship()
@@ -113,6 +114,27 @@ class CollectionRun(Base):
     errors: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str]
     trigger: Mapped[str] = mapped_column(server_default="manual")  # "manual" or "scheduled"
+
+
+class ListingPhoto(Base):
+    """One photo of a listing, recorded when the listing is first fetched and downloaded once."""
+
+    __tablename__ = "listing_photos"
+    __table_args__ = (UniqueConstraint("listing_id", "ria_photo_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id"))
+    ria_photo_id: Mapped[int]
+    url_slug: Mapped[str]  # "{markNameEng}_{modelNameEng}", part of the CDN URL
+    position: Mapped[int]  # order in the listing's photo list
+    is_cover: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[str] = mapped_column(default="pending")  # pending | ok | gone (404) | failed
+    http_status: Mapped[int | None]
+    variant: Mapped[str | None]  # CDN size suffix that was downloaded: "hd" or "f"
+    key: Mapped[str | None]  # file location relative to the photo store, see photo_store.py
+    size_bytes: Mapped[int | None]
+    first_seen_at: Mapped[datetime]
+    downloaded_at: Mapped[datetime | None]
 
 
 class ListingSnapshot(Base):

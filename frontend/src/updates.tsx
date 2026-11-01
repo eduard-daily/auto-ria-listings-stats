@@ -20,14 +20,20 @@ const ENDPOINTS: Record<UpdateKind, string> = { update: "/api/update", force: "/
 
 function summarize(result: UpdateOut): Notice {
   const runs = [...result.discoveries, ...(result.collection ? [result.collection] : [])];
-  if (runs.length === 0) {
-    return { kind: "ok", text: "Nothing to do: no discovery is due and no listings are waiting for a fetch." };
+  const { downloaded, failed, remaining } = result.photos;
+  if (runs.length === 0 && downloaded === 0 && failed === 0 && remaining === 0) {
+    return { kind: "ok", text: "Nothing to do: no discovery is due and nothing is waiting for a fetch." };
   }
 
   const parts: string[] = [];
   for (const d of result.discoveries) parts.push(`discovery found ${d.ids_returned ?? 0} listings`);
   if (result.collection) parts.push(`fetched details with ${result.collection.requests_used} requests`);
-  const text = `Update finished: ${parts.join(", ")}.`;
+  if (downloaded > 0) parts.push(`downloaded ${downloaded} photos`);
+  let text = `Update finished: ${parts.join(", ") || "nothing new"}.`;
+  if (remaining > 0) text += ` ${remaining} photos are left for the next update.`;
+  if (failed > 0) {
+    return { kind: "warn", text: `${text} ${failed} photos could not be downloaded and will be retried.` };
+  }
 
   const limited = runs.find((run) => run.status === "rate_limited");
   if (limited) {

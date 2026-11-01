@@ -3,21 +3,24 @@
 Run with a single worker (the scheduler lives in this process):
 uvicorn ria_stats.api:app --host 0.0.0.0 --port 8000
 """
+import re
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import bindparam, func, select, text
 from sqlalchemy.orm import Session
 
+from ria_stats import photo_store
 from ria_stats.collector import pending_count
 from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress, update_running
 from ria_stats.logging_setup import setup_logging
-from ria_stats.models import CollectionRun, DiscoveryRun, Listing, ListingSnapshot
+from ria_stats.models import CollectionRun, DiscoveryRun, Listing, ListingPhoto, ListingSnapshot
 from ria_stats.scheduler import start_scheduler
 from ria_stats.schemas import (CollectionRunOut, DiscoveryRunOut, ListingDetail, ListingRow, ModelOption,
-                               Snapshot, Stats, UpdateOut)
+                               PhotoOut, PhotosOut, Snapshot, Stats, UpdateOut)
 from ria_stats.update import UpdateResult, refresh_listing, run_update
 
 setup_logging()
@@ -33,6 +36,12 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="ria-stats", lifespan=lifespan)
 
 STATUSES = ("pending", "active", "sold", "removed")
+PHOTO_STATUSES = ("pending", "ok", "gone", "failed")
+PHOTO_FILE = re.compile(r"^\d+\.jpg$")
+
+
+def _photo_url(auto_id: int, photo_id: int) -> str:
+    return f"/api/photos/{auto_id}/{photo_id}.jpg"
 
 
 def get_session() -> Iterator[Session]:
@@ -56,6 +65,8 @@ def _update_out(result: UpdateResult) -> UpdateOut:
     return UpdateOut(
         discoveries=[_discovery_out(d) for d in result.discoveries],
         collection=_collection_out(result.collection) if result.collection else None,
+        photos=PhotosOut(downloaded=result.photos.downloaded, gone=result.photos.gone,
+                         failed=result.photos.failed, remaining=result.photos.remaining),
     )
 
 
@@ -78,14 +89,19 @@ def listings(model_id: int | None = None, status: list[str] = Query(default=list
              session: Session = Depends(get_session)) -> list[ListingRow]:
     if unknown := set(status) - set(STATUSES):
         raise HTTPException(422, f"unknown status: {', '.join(sorted(unknown))}")
-    query = ("SELECT ll.*, l.gearbox FROM listing_latest ll JOIN listings l ON l.id = ll.listing_id "
-             "WHERE ll.status IN :statuses")
+    query = ("SELECT ll.*, l.gearbox, "
+             "(SELECT p.ria_photo_id FROM listing_photos p WHERE p.listing_id = ll.listing_id AND p.status = 'ok' "
+             " ORDER BY p.is_cover DESC, p.position LIMIT 1) AS cover_photo_id "
+             "FROM listing_latest ll JOIN listings l ON l.id = ll.listing_id WHERE ll.status IN :statuses")
     params: dict = {"statuses": status}
     if model_id is not None:
         query += " AND ll.model_id = :model_id"
         params["model_id"] = model_id
     rows = session.execute(text(query).bindparams(bindparam("statuses", expanding=True)), params).mappings()
-    return [ListingRow(**row) for row in rows]
+    return [
+        ListingRow(**row, cover_photo=_photo_url(row["ria_auto_id"], row["cover_photo_id"]) if row["cover_photo_id"] else None)
+        for row in rows
+    ]
 
 
 @app.get("/api/listings/{auto_id}")
@@ -98,8 +114,17 @@ def listing(auto_id: int, session: Session = Depends(get_session)) -> ListingDet
         "SELECT s.*, p.listed_currency, p.listed_price FROM listing_snapshots s "
         "LEFT JOIN snapshot_prices p ON p.snapshot_id = s.id WHERE s.listing_id = :id ORDER BY s.id"
     ), {"id": entity.id}).mappings()
+    photos = session.scalars(
+        select(ListingPhoto)
+        .where(ListingPhoto.listing_id == entity.id, ListingPhoto.status == "ok")
+        .order_by(ListingPhoto.is_cover.desc(), ListingPhoto.position)
+    ).all()
+    photo_list = [PhotoOut(id=p.ria_photo_id, url=_photo_url(auto_id, p.ria_photo_id), is_cover=p.is_cover,
+                           position=p.position) for p in photos]
     return ListingDetail(
         **row,
+        cover_photo=photo_list[0].url if photo_list else None,
+        photos=photo_list,
         **{field: getattr(entity, field) for field in (
             "plate", "generation", "modification", "equipment", "body_type", "fuel_label", "gearbox",
             "drive", "color", "description", "seller_ria_id", "dealer_type", "dealer_name", "last_in_search_at")},
@@ -110,12 +135,14 @@ def listing(auto_id: int, session: Session = Depends(get_session)) -> ListingDet
 @app.get("/api/stats")
 def stats(session: Session = Depends(get_session)) -> Stats:
     by_status = dict(session.execute(text("SELECT status, COUNT(*) FROM listing_latest GROUP BY status")).all())
+    photo_counts = dict(session.execute(select(ListingPhoto.status, func.count()).group_by(ListingPhoto.status)).all())
     discovery_runs = session.scalars(select(DiscoveryRun).order_by(DiscoveryRun.id.desc()).limit(50))
     collection_runs = session.scalars(select(CollectionRun).order_by(CollectionRun.id.desc()).limit(50))
     return Stats(
         update_running=update_running(),
         pending_fetch=pending_count(session),
         listings_by_status={status: by_status.get(status, 0) for status in STATUSES},
+        photos={status: photo_counts.get(status, 0) for status in PHOTO_STATUSES},
         snapshots=session.scalar(select(func.count()).select_from(ListingSnapshot)),
         requests_total=(session.scalar(select(func.coalesce(func.sum(DiscoveryRun.requests_used), 0)))
                         + session.scalar(select(func.coalesce(func.sum(CollectionRun.requests_used), 0)))),
@@ -150,3 +177,14 @@ def refresh(auto_id: int) -> CollectionRunOut:
         raise HTTPException(409, str(e)) from None
     except LookupError:
         raise HTTPException(404, "unknown listing") from None
+
+
+@app.get("/api/photos/{auto_id}/{photo_file}")
+def photo(auto_id: int, photo_file: str) -> FileResponse:
+    if not PHOTO_FILE.match(photo_file):
+        raise HTTPException(404, "unknown photo")
+    path = photo_store.path(f"{auto_id}/{photo_file}")
+    if not path.is_file():
+        raise HTTPException(404, "unknown photo")
+    # A photo's file name contains its own id and the file never changes.
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=31536000, immutable"})

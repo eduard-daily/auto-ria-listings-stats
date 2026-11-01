@@ -2,6 +2,7 @@ import { type ReactNode, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, type ListingDetail as ListingDetailData, type RunOut } from "../api";
 import { Freshness } from "../components/Freshness";
+import { Gallery } from "../components/Gallery";
 import { PriceChart } from "../components/PriceChart";
 import { PriceDelta } from "../components/PriceDelta";
 import { StatusPill } from "../components/StatusPill";
@@ -86,6 +87,7 @@ export function ListingDetail() {
 
       <div className="detail-grid">
         <div className="detail-main">
+          {data.photos.length > 0 && <Gallery photos={data.photos} />}
           <div className="box">
             <div className="box-header">Price history</div>
             <div className="price-summary">
@@ -114,6 +116,7 @@ export function ListingDetail() {
 
           <div className="box">
             <div className="box-header">Observations ({observations.length})</div>
+            <div className="table-scroll">
             <table className="table">
               <thead>
                 <tr>
@@ -140,6 +143,7 @@ export function ListingDetail() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 

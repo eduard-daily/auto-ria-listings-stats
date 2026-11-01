@@ -215,6 +215,7 @@ export function Listings() {
         {rows.length === 0 ? (
           <p className="empty muted">No listings match these filters.</p>
         ) : (
+          <div className="table-scroll">
           <table className="table">
             <thead>
               <tr>
@@ -231,10 +232,19 @@ export function Listings() {
               {rows.map((row) => (
                 <tr key={row.ria_auto_id}>
                   <td>
-                    <Link to={`/listings/${row.ria_auto_id}`} className="listing-title">
-                      {row.brand} {row.model} {row.year}
-                    </Link>
-                    <div className="muted small">{[row.gearbox, row.city].filter(Boolean).join(" · ") || "—"}</div>
+                    <div className="listing-cell">
+                      {row.cover_photo ? (
+                        <img className="thumb" src={row.cover_photo} width={72} height={48} loading="lazy" decoding="async" alt="" />
+                      ) : (
+                        <span className="thumb thumb-empty" />
+                      )}
+                      <div>
+                        <Link to={`/listings/${row.ria_auto_id}`} className="listing-title">
+                          {row.brand} {row.model} {row.year}
+                        </Link>
+                        <div className="muted small">{[row.gearbox, row.city].filter(Boolean).join(" · ") || "—"}</div>
+                      </div>
+                    </div>
                   </td>
                   <td className="num">
                     {formatMoney(row.price, row.currency)}
@@ -255,6 +265,7 @@ export function Listings() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

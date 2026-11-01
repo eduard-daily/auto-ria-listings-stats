@@ -25,6 +25,7 @@ from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress, update_lock
 from ria_stats.logging_setup import setup_logging
 from ria_stats.models import CollectionRun, DiscoveryRun, Listing, ListingSnapshot, Location
+from ria_stats.photos import sync_photos
 
 SITE_URL = "https://auto.ria.com"
 
@@ -144,8 +145,16 @@ def _pending(session: Session) -> list[tuple[Listing, bool]]:
         )
         in_search_now = Listing.last_in_search_at >= anchor
         departed = (Listing.last_in_search_at < anchor) & latest_in_search.is_(True)
+        # Listings whose photos were never recorded (fetched before photos existed) are fetched
+        # again, unless a fetch already failed for them in this cycle.
+        failed_this_cycle = exists().where(
+            ListingSnapshot.listing_id == Listing.id, ListingSnapshot.observed_at >= anchor,
+            ListingSnapshot.fetch_ok.is_(False))
+        needs_photos = Listing.photos_synced_at.is_(None) & ~failed_this_cycle
         listings = session.scalars(
-            select(Listing).where(Listing.model_id == model_id, ~fresh, in_search_now | departed).order_by(Listing.id)
+            select(Listing)
+            .where(Listing.model_id == model_id, (~fresh & (in_search_now | departed)) | needs_photos)
+            .order_by(Listing.id)
         )
         pending += [(listing, listing.last_in_search_at >= anchor) for listing in listings]
     return pending
@@ -175,7 +184,9 @@ def _fetch_targets(session: Session, client: RiaClient, run: CollectionRun,
         now = utcnow()
         response = _fetch_info(client, listing.ria_auto_id, errors)
         if response is not None and response.status_code == 200:
-            _apply_info(session, listing, response.json(), now)
+            data = response.json()
+            _apply_info(session, listing, data, now)
+            sync_photos(session, listing, data, now)
         snapshot = _snapshot(listing, run, now, in_search=in_search, response=response)
         session.add(snapshot)
         session.commit()

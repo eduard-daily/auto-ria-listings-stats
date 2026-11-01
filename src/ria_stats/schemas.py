@@ -41,6 +41,7 @@ class ListingRow(BaseModel):
     posted_at: datetime | None
     first_seen_at: UtcDateTime
     last_observed_at: UtcDateTime | None
+    cover_photo: str | None = None  # URL of the downloaded cover photo, if there is one
 
 
 class Snapshot(BaseModel):
@@ -66,6 +67,13 @@ class Snapshot(BaseModel):
     status_id5_type: int | None
 
 
+class PhotoOut(BaseModel):
+    id: int
+    url: str
+    is_cover: bool
+    position: int
+
+
 class ListingDetail(ListingRow):
     vin: str | None
     plate: str | None
@@ -81,6 +89,7 @@ class ListingDetail(ListingRow):
     dealer_type: str | None
     dealer_name: str | None
     last_in_search_at: UtcDateTime | None
+    photos: list[PhotoOut]  # downloaded ones, cover first
     snapshots: list[Snapshot]
 
 
@@ -113,10 +122,19 @@ class Stats(BaseModel):
     listings_by_status: dict[str, int]
     snapshots: int
     requests_total: int
+    photos: dict[str, int]  # photo count by status: pending, ok, gone, failed
     discovery_runs: list[DiscoveryRunOut]  # newest first, last 50
     collection_runs: list[CollectionRunOut]
+
+
+class PhotosOut(BaseModel):
+    downloaded: int
+    gone: int
+    failed: int
+    remaining: int
 
 
 class UpdateOut(BaseModel):
     discoveries: list[DiscoveryRunOut]
     collection: CollectionRunOut | None
+    photos: PhotosOut

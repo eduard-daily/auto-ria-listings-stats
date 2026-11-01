@@ -32,6 +32,14 @@ export interface ListingRow {
   posted_at: string | null; // site local time
   first_seen_at: string;
   last_observed_at: string | null;
+  cover_photo: string | null; // URL of the downloaded cover photo
+}
+
+export interface PhotoOut {
+  id: number;
+  url: string;
+  is_cover: boolean;
+  position: number;
 }
 
 export interface Snapshot {
@@ -72,6 +80,7 @@ export interface ListingDetail extends ListingRow {
   dealer_type: string | null;
   dealer_name: string | null;
   last_in_search_at: string | null;
+  photos: PhotoOut[]; // downloaded ones, cover first
   snapshots: Snapshot[];
 }
 
@@ -91,9 +100,17 @@ export interface DiscoveryRunOut extends RunOut {
   ids_returned: number | null;
 }
 
+export interface PhotosOut {
+  downloaded: number;
+  gone: number;
+  failed: number;
+  remaining: number;
+}
+
 export interface UpdateOut {
   discoveries: DiscoveryRunOut[];
   collection: RunOut | null;
+  photos: PhotosOut;
 }
 
 export interface Stats {
@@ -102,6 +119,7 @@ export interface Stats {
   listings_by_status: Record<Status, number>;
   snapshots: number;
   requests_total: number;
+  photos: Record<"pending" | "ok" | "gone" | "failed", number>;
   discovery_runs: DiscoveryRunOut[];
   collection_runs: RunOut[];
 }

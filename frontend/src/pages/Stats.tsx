@@ -57,7 +57,7 @@ export function Stats() {
               <strong>Update</strong>
               <p className="muted small">
                 What a scheduled run does: a discovery if one is due, then fetches details for listings not yet fetched in
-                this cycle. {data.update_running ? "An update is running right now." : `${data.pending_fetch} listings are waiting.`}
+                this cycle, and downloads photos. {data.update_running ? "An update is running right now." : `${data.pending_fetch} listings are waiting.`}
               </p>
             </div>
             <button className="btn btn-primary" disabled={busy !== null || data.update_running} onClick={() => run("update")}>
@@ -91,6 +91,10 @@ export function Stats() {
             <dd>{data.pending_fetch}</dd>
             <dt>Snapshots</dt>
             <dd>{data.snapshots}</dd>
+            <dt>Photos downloaded</dt>
+            <dd>{data.photos.ok}</dd>
+            <dt>Photos waiting</dt>
+            <dd>{data.photos.pending + data.photos.failed}</dd>
             <dt>API requests used</dt>
             <dd>{data.requests_total}</dd>
           </dl>
@@ -98,6 +102,7 @@ export function Stats() {
 
         <div className="box">
           <div className="box-header">Runs{truncated ? " (latest 50 of each kind)" : ""}</div>
+          <div className="table-scroll">
           <table className="table">
             <thead>
               <tr>
@@ -128,6 +133,7 @@ export function Stats() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
