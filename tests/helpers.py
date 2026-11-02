@@ -28,11 +28,12 @@ class FakeRia:
     """Stands in for RiaClient. info() answers with the sanitized fixture of an active listing."""
 
     def __init__(self, ids=(), rate_limit_after: int | None = None, missing=(), bad=(), search_status: int = 200,
-                 error: Exception | None = None):
+                 error: Exception | None = None, payloads=None):
         self.ids = list(ids)
         self.bad = set(bad)  # ids whose /auto/info answers 200 with an unusable body
         self.search_status = search_status
         self.error = error  # raised by every search and info call, like a network failure
+        self.payloads = payloads or {}  # id -> full /auto/info body (dict) or an HTTP status (int)
         self.rate_limit_after = rate_limit_after  # requests beyond this many raise RateLimited
         self.missing = set(missing)  # ids whose /auto/info answers 404
         self.requests_used = 0
@@ -58,6 +59,9 @@ class FakeRia:
             raise self.error
         if auto_id in self.missing:
             return json_response({}, 404)
+        if auto_id in self.payloads:
+            payload = self.payloads[auto_id]
+            return json_response({}, payload) if isinstance(payload, int) else json_response(payload)
         data = copy.deepcopy(load_fixture("info_active"))
         data["autoData"]["autoId"] = auto_id
         data["USD"] = 10000 + auto_id

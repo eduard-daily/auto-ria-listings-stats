@@ -1,10 +1,29 @@
+import sys
+
 import pytest
 from alembic import command
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 
 from helpers import alembic_config
-from ria_stats import api, collector, locking, photo_store, photos, seed, update
+from ria_stats import api, collector, locking, photo_store, photos, seed, update  # noqa: F401 (imported so they exist)
+
+
+def modules_with_a_session_factory():
+    """Every ria_stats module that opens its own sessions, found by looking rather than by a list
+    that someone has to remember to extend."""
+    return [m for name, m in list(sys.modules.items()) if name.startswith("ria_stats") and hasattr(m, "SessionLocal")]
+
+
+@pytest.fixture(autouse=True)
+def never_touch_the_real_database(monkeypatch):
+    """A test that does not use the `db` fixture must fail instead of quietly using data/ria.db."""
+
+    def refuse(*args, **kwargs):
+        raise RuntimeError("a test tried to open the real database; use the `db` fixture")
+
+    for module in modules_with_a_session_factory():
+        monkeypatch.setattr(module, "SessionLocal", refuse)
 
 
 @pytest.fixture
@@ -18,7 +37,7 @@ def db(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{path}")
     event.listen(engine, "connect", lambda connection, _: connection.execute("PRAGMA foreign_keys=ON"))
     session_factory = sessionmaker(engine)
-    for module in (api, collector, photos, update):
+    for module in modules_with_a_session_factory():
         monkeypatch.setattr(module, "SessionLocal", session_factory)
     monkeypatch.setattr(locking, "LOCK_PATH", tmp_path / "update.lock")
     monkeypatch.setattr(photo_store, "PHOTOS_DIR", tmp_path / "photos")

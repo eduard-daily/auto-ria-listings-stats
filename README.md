@@ -60,11 +60,12 @@ uv run pytest                        # tests
 cd frontend && npm install && npm run dev    # UI with hot reload on :5173, proxies /api to :8000
 ```
 
-The same work from the command line:
+The same work from the command line, and one extra: adding an old listing that is already gone from AUTO.RIA (a plain id or a pasted link; it needs the `MX-5` to be a tracked model and the listing to be inactive):
 
 ```bash
 uv run python -m ria_stats.discovery [--force]                          # search for listings
 uv run python -m ria_stats.collector [--max-requests N] [--auto-id N]   # fetch details
+uv run python -m ria_stats.backfill <id or link> [...]                  # add listings that are already gone
 ```
 
 Settings (which model is tracked, the request cap, the refresh interval, photo limits) are in `src/ria_stats/config.py`; the schedule is in `src/ria_stats/scheduler.py`.
