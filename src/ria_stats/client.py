@@ -8,11 +8,16 @@ from dotenv import load_dotenv
 BASE_URL = "https://developers.ria.com"
 
 
+def redact(text: str) -> str:
+    """The API key travels in the query string; hide it wherever a URL may end up in text."""
+    return re.sub(r"(api_key=)[^&\s\"']+", r"\1***", text)
+
+
 class _RedactApiKey(logging.Filter):
-    """httpx logs every request URL at INFO, and the API key is in the query string."""
+    """httpx logs every request URL at INFO."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.msg = re.sub(r"(api_key=)[^&\s\"]+", r"\1***", record.getMessage())
+        record.msg = redact(record.getMessage())
         record.args = ()
         return True
 
@@ -22,6 +27,10 @@ logging.getLogger("httpx").addFilter(_RedactApiKey())
 
 class RateLimited(Exception):
     """The API answered HTTP 429. The caller should stop, not retry."""
+
+
+class ApiError(Exception):
+    """The API answered with an unusable status. Its message never contains the request URL."""
 
 
 class RiaClient:

@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import threading
 
 import pytest
 
@@ -25,3 +26,32 @@ def test_a_second_update_is_refused_while_another_holds_the_lock(db):
     assert not locking.update_running()  # released when the holder died
     with locking.update_lock():
         pass
+
+
+def test_status_checks_never_make_a_real_update_fail(db):
+    """/api/stats peeks at the lock; an update starting at that instant must not be refused."""
+    stop = threading.Event()
+    checker = threading.Thread(target=lambda: [locking.update_running() for _ in iter(stop.is_set, True)])
+    checker.start()
+    refused = 0
+    try:
+        for _ in range(400):
+            try:
+                with locking.update_lock():
+                    pass
+            except locking.UpdateInProgress:
+                refused += 1
+    finally:
+        stop.set()
+        checker.join()
+    assert refused == 0
+
+
+def test_status_checks_do_not_see_each_other_as_a_running_update(db):
+    seen = []
+    checkers = [threading.Thread(target=lambda: seen.extend(locking.update_running() for _ in range(300))) for _ in range(2)]
+    for checker in checkers:
+        checker.start()
+    for checker in checkers:
+        checker.join()
+    assert seen and not any(seen)

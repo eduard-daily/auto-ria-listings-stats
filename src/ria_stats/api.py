@@ -6,9 +6,10 @@ uvicorn ria_stats.api:app --host 0.0.0.0 --port 8000
 import re
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import bindparam, func, select, text
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,20 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="ria-stats", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def refuse_cross_origin_writes(request: Request, call_next):
+    """There is no login, so a page on another site must not be able to start an update.
+
+    Browsers attach an Origin header to cross-origin writes; it has to name this very host.
+    Requests without one (curl, scripts) are not browser-driven and pass.
+    """
+    origin = request.headers.get("origin")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin is not None:
+        if urlsplit(origin).netloc != request.headers.get("host"):
+            return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+    return await call_next(request)
 
 STATUSES = ("pending", "active", "sold", "removed")
 PHOTO_STATUSES = ("pending", "ok", "gone", "failed")

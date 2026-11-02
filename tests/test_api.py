@@ -63,3 +63,14 @@ def test_photos_are_served_as_immutable_files_and_paths_cannot_escape(client):
 
     for bad in ("/api/photos/101/..%2F..%2Fria.db", "/api/photos/101/555.png", "/api/photos/101/x.jpg", "/api/photos/999/555.jpg"):
         assert client.get(bad).status_code == 404
+
+
+def test_writes_from_another_origin_are_refused_but_normal_clients_pass(client):
+    writes = ("/api/update", "/api/discovery/force", "/api/listings/101/refresh")
+    with locking.update_lock():  # so a request that gets through answers 409 instead of running anything
+        for path in writes:
+            assert client.post(path, headers={"Origin": "https://evil.example"}).status_code == 403
+            assert client.post(path, headers={"Origin": "null"}).status_code == 403
+            assert client.post(path, headers={"Origin": "http://testserver"}).status_code == 409  # this host
+            assert client.post(path).status_code == 409  # curl, scripts: no Origin header
+    assert client.get("/api/stats", headers={"Origin": "https://evil.example"}).status_code == 200  # reads stay open

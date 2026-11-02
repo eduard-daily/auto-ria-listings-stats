@@ -16,7 +16,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ria_stats.client import RateLimited, RiaClient
+from ria_stats.client import ApiError, RateLimited, RiaClient, redact
 from ria_stats.config import REFRESH_DAYS, TRACKED, utcnow
 from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress, update_lock
@@ -32,7 +32,8 @@ def _search_ids(client: RiaClient, brand_ria_id: int, model_ria_id: int) -> tupl
     page = 0
     while True:
         response = client.search(brand_ria_id, model_ria_id, page)
-        response.raise_for_status()
+        if response.status_code != 200:  # not raise_for_status(): its message holds the URL, and the key
+            raise ApiError(f"search page {page}: HTTP {response.status_code}")
         result = response.json()["result"]["search_result"]
         ids += [int(i) for i in result["ids"]]
         if not result["ids"] or len(ids) >= result["count"]:
@@ -96,14 +97,14 @@ def discover(session: Session, client: RiaClient, trigger: str = "manual",
         except RateLimited as e:
             run.status = "rate_limited"
             run.errors = f"HTTP 429 on {e}"
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ApiError) as e:
             session.rollback()
             run.status = "failed"
-            run.errors = repr(e)
+            run.errors = redact(repr(e))
         except Exception as e:
             session.rollback()
             run.status = "failed"
-            run.errors = repr(e)
+            run.errors = redact(repr(e))
             raise
         finally:
             run.requests_used = client.requests_used - requests_before

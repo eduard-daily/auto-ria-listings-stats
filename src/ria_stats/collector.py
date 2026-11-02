@@ -19,7 +19,7 @@ import httpx
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from ria_stats.client import RateLimited, RiaClient
+from ria_stats.client import RateLimited, RiaClient, redact
 from ria_stats.config import MAX_REQUESTS, utcnow
 from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress, update_lock
@@ -114,7 +114,7 @@ def _fetch_info(client: RiaClient, auto_id: int, errors: list[str]) -> httpx.Res
     try:
         response = client.info(auto_id)
     except httpx.HTTPError as e:
-        errors.append(f"info {auto_id}: {e!r}")
+        errors.append(redact(f"info {auto_id}: {e!r}"))
         return None
     if response.status_code != 200:
         errors.append(f"info {auto_id}: HTTP {response.status_code}")
@@ -183,11 +183,21 @@ def _fetch_targets(session: Session, client: RiaClient, run: CollectionRun,
             break
         now = utcnow()
         response = _fetch_info(client, listing.ria_auto_id, errors)
+        unusable = False
         if response is not None and response.status_code == 200:
-            data = response.json()
-            _apply_info(session, listing, data, now)
-            sync_photos(session, listing, data, now)
-        snapshot = _snapshot(listing, run, now, in_search=in_search, response=response)
+            try:
+                data = response.json()
+                _apply_info(session, listing, data, now)
+                sync_photos(session, listing, data, now)
+            except Exception as e:  # one malformed listing must not stop every later one
+                session.rollback()  # drops what was half applied to this listing
+                errors.append(redact(f"listing {listing.ria_auto_id}: unusable response: {e!r}"))
+                unusable = True
+        if unusable:
+            snapshot = _snapshot(listing, run, now, in_search=in_search, response=None)
+            snapshot.http_status = response.status_code  # a 200 that could not be used
+        else:
+            snapshot = _snapshot(listing, run, now, in_search=in_search, response=response)
         session.add(snapshot)
         session.commit()
         outcome = (f"${snapshot.price_usd}, {snapshot.mileage_k_km}k km" if snapshot.fetch_ok
@@ -224,7 +234,7 @@ def collect(max_requests: int = MAX_REQUESTS, client: RiaClient | None = None, t
             run.status = "rate_limited"
         except Exception as e:
             session.rollback()
-            errors.append(f"aborted: {e!r}")
+            errors.append(redact(f"aborted: {e!r}"))
             run.status = "failed"
             raise
         finally:

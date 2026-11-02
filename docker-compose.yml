@@ -33,7 +33,7 @@ services:
       UV_CACHE_DIR: /tmp/uv-cache
       UV_TOOL_DIR: /tmp/uv-tools
       UV_TOOL_BIN_DIR: /tmp/uv-bin
-    command: uvx --from sqlite-web sqlite_web -r --host 0.0.0.0 --port 8080 /data/ria.db
+    command: uvx --from sqlite-web==0.8.2 sqlite_web -r --host 0.0.0.0 --port 8080 /data/ria.db
     # Localhost only: the DB holds VINs and plates.
     ports:
       - "127.0.0.1:8080:8080"
