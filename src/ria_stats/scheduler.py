@@ -12,7 +12,7 @@ from ria_stats.locking import UpdateInProgress
 from ria_stats.update import run_update
 
 # Hours of the day (container local time, see TZ in docker-compose.yml) when a run may start.
-RUN_HOURS = "12-14"
+RUN_HOURS = "12-18"
 
 log = logging.getLogger("ria_stats.scheduler")
 
