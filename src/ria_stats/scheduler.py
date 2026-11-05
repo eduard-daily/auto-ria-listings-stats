@@ -8,11 +8,12 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from ria_stats import settings
+from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress
 from ria_stats.update import run_update
 
-# Hours of the day (container local time, see TZ in docker-compose.yml) when a run may start.
-RUN_HOURS = "12-18"
+JOB_ID = "collection"
 
 log = logging.getLogger("ria_stats.scheduler")
 
@@ -42,9 +43,23 @@ def run_collection() -> None:
             log.warning(run.errors)
 
 
+def apply_settings(scheduler: BackgroundScheduler) -> None:
+    """Make the job follow the settings: its hours (container local time, see TZ in
+    docker-compose.yml), and paused when the scheduled sync is switched off."""
+    with SessionLocal() as session:
+        current = settings.load(session)
+    hours = ",".join(str(h) for h in current.run_hours)
+    scheduler.reschedule_job(JOB_ID, trigger=CronTrigger(hour=hours, minute=0))
+    if current.scheduler_enabled:
+        scheduler.resume_job(JOB_ID)
+    else:
+        scheduler.pause_job(JOB_ID)
+    log.info("scheduled sync %s, runs at minute 0 of hours %s", "on" if current.scheduler_enabled else "off", hours)
+
+
 def start_scheduler() -> BackgroundScheduler:
     scheduler = BackgroundScheduler()
-    scheduler.add_job(run_collection, CronTrigger(hour=RUN_HOURS, minute=0))
+    scheduler.add_job(run_collection, CronTrigger(minute=0), id=JOB_ID)
+    apply_settings(scheduler)
     scheduler.start()
-    log.info("scheduler started, runs at minute 0 of hours %s", RUN_HOURS)
     return scheduler

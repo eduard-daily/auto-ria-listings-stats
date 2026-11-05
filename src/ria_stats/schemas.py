@@ -9,6 +9,8 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel
 
+from ria_stats.settings import Settings
+
 UtcDateTime = Annotated[datetime, AfterValidator(lambda d: d.replace(tzinfo=UTC))]
 
 
@@ -138,3 +140,9 @@ class UpdateOut(BaseModel):
     discoveries: list[DiscoveryRunOut]
     collection: CollectionRunOut | None
     photos: PhotosOut
+
+
+class SettingsOut(BaseModel):
+    values: Settings
+    defaults: Settings
+    limits: dict[str, tuple[int, int]]  # setting -> (smallest, largest)

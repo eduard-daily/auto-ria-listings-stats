@@ -36,6 +36,20 @@ def test_photos_are_recorded_once_with_the_cover_flagged(db):
         assert bare.photos_synced_at is not None
 
 
+def test_only_the_cover_and_the_first_photos_are_recorded_for_a_huge_listing(db):
+    cap = 40
+    data = load_fixture("info_active")
+    ids = list(range(1000, 1400))  # 400 photos, the cover is the last one
+    data["photoData"] = {"all": ids, "seoLinkB": f"https://x/mazda_mx-5__{ids[-1]}b.jpg"}
+    with db.begin() as session:
+        photos.sync_photos(session, add_listing(session), data, photos.utcnow())
+        rows = session.scalars(select(ListingPhoto).order_by(ListingPhoto.position)).all()
+
+        assert len(rows) == cap + 1
+        assert [r.ria_photo_id for r in rows][:-1] == ids[:cap]
+        assert rows[-1].ria_photo_id == ids[-1] and rows[-1].is_cover
+
+
 def fake_cdn(calls: list):
     def handler(request: httpx.Request) -> httpx.Response:
         photo_id, variant = re.search(r"__(\d+)(hd|f)\.jpg", str(request.url)).groups()

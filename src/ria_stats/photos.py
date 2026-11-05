@@ -19,6 +19,7 @@ from ria_stats import photo_store
 from ria_stats.config import MAX_PHOTOS, PHOTO_DELAY, utcnow
 from ria_stats.db import SessionLocal
 from ria_stats.models import Listing, ListingPhoto
+from ria_stats.settings import load as load_settings
 
 # Any of cdn0..cdn3 serves the same file. Sizes: hd 1280x853, f 800x600 (cropped), b/m/sx 380x250.
 CDN_URL = "https://cdn1.riastatic.com/photosnew/auto/photo/{slug}__{photo_id}{variant}.jpg"
@@ -40,8 +41,9 @@ class PhotoResult:
 def sync_photos(session: Session, listing: Listing, data: dict, now: datetime) -> None:
     """Record the photos in an /auto/info response, the first time only.
 
-    Photos the seller adds or removes later are ignored. A listing without photos is marked as
-    synced too, so it is not fetched again just for photos.
+    Photos the seller adds or removes later are ignored. Only the cover and the first photos, up
+    to the max_photos_per_listing setting, are recorded. A listing without photos is marked as synced too, so
+    it is not fetched again just for photos.
     """
     if listing.photos_synced_at is not None:
         return
@@ -54,7 +56,12 @@ def sync_photos(session: Session, listing: Listing, data: dict, now: datetime) -
     slug = f'{data["markNameEng"]}_{data["modelNameEng"]}'
     cover = COVER_PATTERN.search(photo_data.get("seoLinkB") or "")
     cover_id = int(cover.group(1)) if cover else None
+    kept = set(ids[:load_settings(session).max_photos_per_listing])
+    if cover_id in ids:
+        kept.add(cover_id)
     for position, photo_id in enumerate(ids):
+        if photo_id not in kept:
+            continue
         session.add(ListingPhoto(listing_id=listing.id, ria_photo_id=photo_id, url_slug=slug, position=position,
                                  is_cover=photo_id == cover_id, first_seen_at=now))
 

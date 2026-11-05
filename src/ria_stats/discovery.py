@@ -3,7 +3,7 @@
 A sweep makes search requests only, never /auto/info. It stores a stub listing for every new id
 and stamps last_in_search_at on every id found; the details are fetched later by the collector.
 Each sweep is logged in discovery_runs, and the latest completed one anchors the model's refresh
-cycle. A model is swept again once that run is REFRESH_DAYS calendar days old.
+cycle. A model is swept again once that run is `refresh_days` (a setting) calendar days old.
 
 Usage: uv run python -m ria_stats.discovery
 """
@@ -17,11 +17,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ria_stats.client import ApiError, RateLimited, RiaClient, redact
-from ria_stats.config import REFRESH_DAYS, TRACKED, utcnow
+from ria_stats.config import TRACKED, utcnow
 from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress, update_lock
 from ria_stats.logging_setup import setup_logging
 from ria_stats.models import DiscoveryRun, Listing, Model
+from ria_stats.settings import load as load_settings
 
 log = logging.getLogger("ria_stats.discovery")
 
@@ -41,14 +42,14 @@ def _search_ids(client: RiaClient, brand_ria_id: int, model_ria_id: int) -> tupl
         page += 1
 
 
-def _is_due(session: Session, model: Model, now: datetime) -> bool:
+def _is_due(session: Session, model: Model, now: datetime, refresh_days: int) -> bool:
     last = session.scalar(
         select(DiscoveryRun.started_at)
         .where(DiscoveryRun.model_id == model.id, DiscoveryRun.status == "completed")
         .order_by(DiscoveryRun.id.desc())
         .limit(1)
     )
-    return last is None or (now.date() - last.date()).days >= REFRESH_DAYS
+    return last is None or (now.date() - last.date()).days >= refresh_days
 
 
 def _store(session: Session, model: Model, ids: list[int], started_at: datetime) -> int:
@@ -76,10 +77,11 @@ def discover(session: Session, client: RiaClient, trigger: str = "manual",
     The caller holds the update lock.
     """
     runs = []
+    refresh_days = load_settings(session).refresh_days
     for brand_ria_id, model_ria_id in TRACKED:
         model = session.scalars(select(Model).where(Model.ria_id == model_ria_id)).one()
         now = utcnow()
-        if not force and not _is_due(session, model, now):
+        if not force and not _is_due(session, model, now, refresh_days):
             continue
 
         run = DiscoveryRun(model=model, started_at=now, status="running", trigger=trigger)

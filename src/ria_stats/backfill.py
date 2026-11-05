@@ -18,12 +18,13 @@ from sqlalchemy.orm import Session
 
 from ria_stats.client import RateLimited, RiaClient, redact
 from ria_stats.collector import _apply_info, _snapshot
-from ria_stats.config import MAX_REQUESTS, TRACKED, utcnow
+from ria_stats.config import TRACKED, utcnow
 from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress, update_lock
 from ria_stats.logging_setup import setup_logging
 from ria_stats.models import CollectionRun, Listing, Model
 from ria_stats.photos import PhotoResult, download_pending, sync_photos
+from ria_stats.settings import load as load_settings
 
 
 @dataclass
@@ -128,8 +129,10 @@ def main(argv: list[str] | None = None) -> int:
         ids = list(dict.fromkeys(parse_auto_id(text) for text in args.listings))
     except ValueError as e:
         parser.error(str(e))
-    if len(ids) > MAX_REQUESTS:
-        parser.error(f"at most {MAX_REQUESTS} listings at a time (one API request each; the hourly cap is 30)")
+    with SessionLocal() as session:
+        max_requests = load_settings(session).max_requests
+    if len(ids) > max_requests:
+        parser.error(f"at most {max_requests} listings at a time (one API request each; the hourly cap is 30)")
 
     setup_logging()
     try:

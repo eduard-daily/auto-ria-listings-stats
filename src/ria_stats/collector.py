@@ -20,12 +20,13 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from ria_stats.client import RateLimited, RiaClient, redact
-from ria_stats.config import MAX_REQUESTS, utcnow
+from ria_stats.config import utcnow
 from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress, update_lock
 from ria_stats.logging_setup import setup_logging
 from ria_stats.models import CollectionRun, DiscoveryRun, Listing, ListingSnapshot, Location
 from ria_stats.photos import sync_photos
+from ria_stats.settings import load as load_settings
 
 SITE_URL = "https://auto.ria.com"
 
@@ -206,15 +207,17 @@ def _fetch_targets(session: Session, client: RiaClient, run: CollectionRun,
                  listing.year, outcome, "" if in_search else ", left search")
 
 
-def collect(max_requests: int = MAX_REQUESTS, client: RiaClient | None = None, trigger: str = "manual",
+def collect(max_requests: int | None = None, client: RiaClient | None = None, trigger: str = "manual",
             auto_id: int | None = None) -> CollectionRun | None:
     """Run one slice of detail collection; None when there is nothing to do.
 
-    Pass a client to share its request counter (and so the cap) with earlier work. With auto_id,
+    max_requests defaults to the setting of that name. Pass a client to share its request counter (and so the cap) with earlier work. With auto_id,
     fetch just that listing (LookupError if unknown) instead of the pending ones.
     The caller holds the update lock.
     """
     with SessionLocal() as session:
+        if max_requests is None:
+            max_requests = load_settings(session).max_requests
         targets = _pending(session) if auto_id is None else _single(session, auto_id)
         if not targets:
             return None
@@ -251,8 +254,8 @@ def collect(max_requests: int = MAX_REQUESTS, client: RiaClient | None = None, t
 if __name__ == "__main__":
     setup_logging()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max-requests", type=int, default=MAX_REQUESTS,
-                        help="stop after this many API requests (default: %(default)s)")
+    parser.add_argument("--max-requests", type=int,
+                        help="stop after this many API requests (default: the max_requests setting)")
     parser.add_argument("--auto-id", type=int, help="fetch only this listing (RIA auto id)")
     args = parser.parse_args()
     try:

@@ -951,3 +951,60 @@ code {
     display: none;
   }
 }
+
+@media (max-width: 480px) {
+  .brand-name {
+    display: none; /* the logo alone is enough; the four nav links need the room */
+  }
+}
+
+/* settings page */
+
+.action-row .input {
+  flex: none;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space);
+  cursor: pointer;
+}
+
+.hour-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  flex: none;
+}
+
+.hour {
+  padding: 3px var(--space);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.hour-on {
+  border-color: var(--link);
+  background: var(--link);
+  color: var(--bg);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--space) * 2);
+}
+
+@media (max-width: 640px) {
+  .action-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

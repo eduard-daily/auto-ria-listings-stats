@@ -13,22 +13,22 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import bindparam, func, select, text
 from sqlalchemy.orm import Session
 
-from ria_stats import photo_store
+from ria_stats import photo_store, settings
 from ria_stats.collector import pending_count
 from ria_stats.db import SessionLocal
 from ria_stats.locking import UpdateInProgress, update_running
 from ria_stats.logging_setup import setup_logging
 from ria_stats.models import CollectionRun, DiscoveryRun, Listing, ListingPhoto, ListingSnapshot
-from ria_stats.scheduler import start_scheduler
+from ria_stats.scheduler import apply_settings, start_scheduler
 from ria_stats.schemas import (CollectionRunOut, DiscoveryRunOut, ListingDetail, ListingRow, ModelOption,
-                               PhotoOut, PhotosOut, Snapshot, Stats, UpdateOut)
+                               PhotoOut, PhotosOut, SettingsOut, Snapshot, Stats, UpdateOut)
 from ria_stats.update import UpdateResult, refresh_listing, run_update
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     setup_logging()
-    scheduler = start_scheduler()
+    scheduler = app.state.scheduler = start_scheduler()
     yield
     scheduler.shutdown(wait=False)
 
@@ -163,6 +163,25 @@ def stats(session: Session = Depends(get_session)) -> Stats:
         discovery_runs=[_discovery_out(r) for r in discovery_runs],
         collection_runs=[_collection_out(r) for r in collection_runs],
     )
+
+
+def _settings_out(session: Session) -> SettingsOut:
+    return SettingsOut(values=settings.load(session), defaults=settings.Settings(), limits=settings.LIMITS)
+
+
+@app.get("/api/settings")
+def get_settings(session: Session = Depends(get_session)) -> SettingsOut:
+    return _settings_out(session)
+
+
+@app.put("/api/settings")
+def put_settings(new: settings.Settings, session: Session = Depends(get_session)) -> SettingsOut:
+    """Replace all settings. The scheduler follows at once; everything else on its next run."""
+    settings.save(session, new)
+    session.commit()
+    if scheduler := getattr(app.state, "scheduler", None):  # absent when the lifespan did not run (tests)
+        apply_settings(scheduler)
+    return _settings_out(session)
 
 
 @app.post("/api/update")

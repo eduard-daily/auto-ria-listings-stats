@@ -124,6 +124,20 @@ export interface Stats {
   collection_runs: RunOut[];
 }
 
+export interface Settings {
+  refresh_days: number;
+  run_hours: number[];
+  scheduler_enabled: boolean;
+  max_requests: number;
+  max_photos_per_listing: number;
+}
+
+export interface SettingsOut {
+  values: Settings;
+  defaults: Settings;
+  limits: Record<string, [number, number]>; // setting -> [smallest, largest]
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

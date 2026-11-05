@@ -171,3 +171,13 @@ class ListingSnapshot(Base):
 
     listing: Mapped[Listing] = relationship()
     run: Mapped[CollectionRun] = relationship()
+
+
+class Setting(Base):
+    """One user-changeable setting; the value is JSON. A missing row means the default (settings.py)."""
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime]

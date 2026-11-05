@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { ListingDetail } from "./pages/ListingDetail";
 import { Listings } from "./pages/Listings";
+import { Settings } from "./pages/Settings";
 import { Stats } from "./pages/Stats";
 
 export function App() {
@@ -11,6 +12,7 @@ export function App() {
         <Route index element={<Listings />} />
         <Route path="listings/:autoId" element={<ListingDetail />} />
         <Route path="stats" element={<Stats />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
   );

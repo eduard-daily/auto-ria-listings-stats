@@ -1,11 +1,9 @@
 import { useState } from "react";
-import type { DiscoveryRunOut, RunOut, Stats as StatsData } from "../api";
+import type { DiscoveryRunOut, RunOut, SettingsOut, Stats as StatsData } from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { formatDateTime } from "../format";
 import { useUpdates } from "../updates";
 import { useFetch } from "../useFetch";
-
-const REQUESTS_PER_RUN = 28; // MAX_REQUESTS in src/ria_stats/config.py
 
 interface RunRow {
   key: string;
@@ -34,6 +32,7 @@ function runRows(discoveries: DiscoveryRunOut[], collections: RunOut[]): RunRow[
 
 export function Stats() {
   const { data, error, loading } = useFetch<StatsData>("/api/stats");
+  const settings = useFetch<SettingsOut>("/api/settings").data;
   const { busy, run } = useUpdates();
   const [confirming, setConfirming] = useState(false);
 
@@ -43,6 +42,7 @@ export function Stats() {
   const { listings_by_status: by } = data;
   const inSearch = by.active + by.pending;
   const forceRequests = inSearch + 1;
+  const requestsPerRun = settings?.values.max_requests ?? 28;
   const rows = runRows(data.discovery_runs, data.collection_runs);
   const truncated = data.discovery_runs.length === 50 || data.collection_runs.length === 50;
 
@@ -149,8 +149,8 @@ export function Stats() {
       >
         <p>
           This searches AUTO.RIA now and starts a new refresh cycle. All {inSearch} listings in search become pending
-          again and will be fetched: about {forceRequests} requests in total, which takes {Math.ceil(forceRequests / REQUESTS_PER_RUN)}{" "}
-          runs of {REQUESTS_PER_RUN} requests. This run does the first {REQUESTS_PER_RUN}.
+          again and will be fetched: about {forceRequests} requests in total, which takes {Math.ceil(forceRequests / requestsPerRun)}{" "}
+          runs of {requestsPerRun} requests. This run does the first {requestsPerRun}.
         </p>
       </ConfirmDialog>
     </>

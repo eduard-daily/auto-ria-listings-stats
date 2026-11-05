@@ -19,13 +19,14 @@ export function Layout() {
         <div className="container topbar-inner">
           <NavLink to="/" className="brand">
             <Logo />
-            ria-stats
+            <span className="brand-name">ria-stats</span>
           </NavLink>
           <nav className="nav">
             <NavLink to="/" end>
               Listings
             </NavLink>
             <NavLink to="/stats">Stats</NavLink>
+            <NavLink to="/settings">Settings</NavLink>
           </nav>
           <div className="topbar-actions">
             <UpdateButton />
