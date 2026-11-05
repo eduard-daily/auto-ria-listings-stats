@@ -20,13 +20,14 @@ docker compose up -d --build
 
 Everything listens on localhost only and has no login. Data lives in `data/` (the SQLite file `data/ria.db` and the photos in `data/photos/`), logs in `logs/`.
 
-On the first start the database is empty: open the UI and click **Update**. An update finds the listings and fetches their details, at most 28 API requests at a time (the free plan allows 30 per hour). Fetching about 35 listings therefore takes two updates, best an hour apart, and the photos fill in over a few more. After that the app updates itself on a schedule (between 12:00 and 14:00 Kyiv time) and every listing is refreshed every two days. Photos download alongside, up to 100 per update.
+On the first start the database is empty: open the UI and click **Update**. An update finds the listings and fetches their details, at most 28 API requests at a time (the free plan allows 30 per hour). Fetching about 35 listings therefore takes two updates, best an hour apart, and the photos fill in over a few more. After that the app updates itself on a schedule (every hour from 12:00 to 18:00 Kyiv time) and every listing is refreshed every two days. Photos download alongside, up to 200 per update and 40 per listing (plus its cover). The schedule, the interval and the limits can be changed on the Settings page.
 
 ## The web UI
 
 - **Listings.** Toggle Active / Sold / Removed, filter by model, gearbox, price (in USD) and year, and click a column header to sort. A green or red chip shows how a price has changed since the listing was first seen. The dot next to "Last synced" fades as the data ages.
 - **A listing.** Click one for its photos, the price history chart, all attributes, every observation, and a **Refresh** button that fetches just that listing now.
 - **Stats.** The **Update** button (the same one as in the header), **Force re-discovery** (starts a new refresh cycle and refetches every listing, so it asks first), counts, and the history of every run.
+- **Settings.** The scheduled sync on/off and the hours it runs, the refresh interval in days, the API requests per run (at most 30) and the photos kept per listing. Changes to the schedule apply at once, the rest from the next run.
 - The sun/moon button in the header switches between light and dark.
 
 ## The API
@@ -68,7 +69,7 @@ uv run python -m ria_stats.collector [--max-requests N] [--auto-id N]   # fetch 
 uv run python -m ria_stats.backfill <id or link> [...]                  # add listings that are already gone
 ```
 
-Settings (which model is tracked, the request cap, the refresh interval, photo limits) are in `src/ria_stats/config.py`; the schedule is in `src/ria_stats/scheduler.py`.
+The tracked model and the photo download pace are in `src/ria_stats/config.py`, which also holds the defaults of the settings on the Settings page (kept in the `settings` table).
 
 ## Notes
 
